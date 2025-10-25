@@ -48,6 +48,19 @@ async function showMainMenu(ctx) {
   await ctx.reply('Selamat datang! Pilih menu di bawah ini:', markup);
 }
 
+// ===== Fungsi tombol reaction =====
+function reactionButtons(token) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('❤️', `react_${token}_love`),
+      Markup.button.callback('👍', `react_${token}_like`),
+      Markup.button.callback('👎', `react_${token}_dislike`),
+      Markup.button.callback('😍', `react_${token}_wow`),
+      Markup.button.callback('😭', `react_${token}_cry`)
+    ]
+  ]);
+}
+
 // ===== Start =====
 bot.start(async (ctx) => {
   ctx.session = {};
@@ -123,7 +136,7 @@ bot.on(['photo', 'video', 'document'], async (ctx) => {
 // ===== Rate Pap =====
 bot.hears('📊 Rate Pap', async (ctx) => {
   ctx.session.rating = { stage: 'menunggu_token' };
-  await ctx.reply('🔢 Masukkan token pap yang ingin kamu nilai:', Markup.keyboard([
+  await ctx.reply('🔢 Masukkan token pap yang ingin kamu beri reaksi:', Markup.keyboard([
     ['🔙 Kembali']
   ]).resize());
 });
@@ -176,7 +189,7 @@ bot.on('text', async (ctx) => {
     return showMainMenu(ctx);
   }
 
-  // Token rating
+  // Token rating pakai tombol reaksi
   const rating = ctx.session.rating;
   if (rating?.stage === 'menunggu_token') {
     const data = mediaStore.get(text);
@@ -188,27 +201,22 @@ bot.on('text', async (ctx) => {
     }
 
     if (ctx.from.id === data.from)
-      return ctx.reply('⚠️ Kamu tidak bisa menilai pap sendiri.');
-
-    ctx.session.rating = { stage: 'menunggu_rating', token: text, from: data.from };
+      return ctx.reply('⚠️ Kamu tidak bisa bereaksi pada pap sendiri.');
 
     const caption = `📸 Pap oleh: *${data.mode}*${data.caption ? `\n📝 ${data.caption}` : ''}`;
-    const mediaOptions = { caption, parse_mode: 'Markdown', protect_content: true };
+    const mediaOptions = { 
+      caption, 
+      parse_mode: 'Markdown', 
+      protect_content: true, 
+      ...reactionButtons(text)
+    };
 
     if (data.fileType === 'photo') await ctx.replyWithPhoto(data.fileId, mediaOptions);
     else if (data.fileType === 'video') await ctx.replyWithVideo(data.fileId, mediaOptions);
     else await ctx.replyWithDocument(data.fileId, mediaOptions);
 
-    return ctx.reply('📝 Ketik angka rating (1–5):');
-  }
-
-  if (rating?.stage === 'menunggu_rating') {
-    const val = parseInt(text);
-    if (isNaN(val) || val < 1 || val > 5) return ctx.reply('Masukkan angka 1–5.');
-    await ctx.reply(`✅ Terima kasih! Kamu memberi rating ${val}/5`);
-    await sendSafeMessage(rating.from, `📸 Pap kamu diberi rating *${val}/5*`, { parse_mode: 'Markdown' });
     ctx.session.rating = null;
-    return showMainMenu(ctx);
+    return;
   }
 
   // Menfes kirim pesan
@@ -224,6 +232,39 @@ bot.on('text', async (ctx) => {
     await ctx.reply('✅ Menfes kamu sudah dikirim!');
     return showMainMenu(ctx);
   }
+});
+
+// ===== Handler tombol reaction =====
+bot.on('callback_query', async (ctx) => {
+  const data = ctx.callbackQuery.data;
+  if (!data.startsWith('react_')) return;
+
+  const parts = data.split('_'); // contoh: react_token_love
+  const token = parts[1];
+  const reaction = parts[2];
+  const media = mediaStore.get(token);
+
+  if (!media) {
+    await ctx.answerCbQuery('⚠️ Pap tidak ditemukan atau token kedaluwarsa.');
+    return;
+  }
+
+  if (ctx.from.id === media.from) {
+    await ctx.answerCbQuery('❌ Kamu tidak bisa bereaksi pada pap sendiri!');
+    return;
+  }
+
+  let emoji = '';
+  switch (reaction) {
+    case 'love': emoji = '❤️'; break;
+    case 'like': emoji = '👍'; break;
+    case 'dislike': emoji = '👎'; break;
+    case 'wow': emoji = '😍'; break;
+    case 'cry': emoji = '😭'; break;
+  }
+
+  await ctx.answerCbQuery(`Kamu memberi reaksi ${emoji}`);
+  await sendSafeMessage(media.from, `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!`, { parse_mode: 'Markdown' });
 });
 
 // ===== Admin Commands =====
