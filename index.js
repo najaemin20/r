@@ -1,6 +1,5 @@
 const { Telegraf, Markup, session } = require('telegraf');
 const crypto = require('crypto');
-const { createCanvas } = require('canvas');
 
 const BOT_TOKEN = '7524016177:AAEDhnG7UZ2n8BL6dXQA66_gi1IzReTazl4';
 const PUBLIC_CHANNEL_ID = '-1002857800900';
@@ -26,15 +25,6 @@ function getUserDisplay(user) {
   return `[${user.first_name}](tg://user?id=${user.id})`;
 }
 
-function formatTime(date = new Date()) {
-  const d = String(date.getDate()).padStart(2, '0');
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const y = date.getFullYear();
-  const h = String(date.getHours()).padStart(2, '0');
-  const min = String(date.getMinutes()).padStart(2, '0');
-  return `${d}-${m}-${y} ${h}:${min}`;
-}
-
 async function sendSafeMessage(userId, message, extra = {}) {
   try {
     await bot.telegram.sendMessage(userId, message, extra);
@@ -57,21 +47,21 @@ async function showMainMenu(ctx) {
   await ctx.reply('Selamat datang! Pilih menu di bawah ini:', markup);
 }
 
-// ===== HELP Button =====
+// ===== HELP =====
 bot.hears('ℹ️ Help', async (ctx) => {
   const helpMsg = `
 📘 *Panduan Penggunaan Bot PAP*
 
 1️⃣ **📸 Kirim Pap**
 Kirim foto/video anonim atau dengan identitas kamu.  
-→ Bot akan memberi token unik + waktu kirim.  
+→ Bot akan memberi token unik.
 
 2️⃣ **📊 Rate Pap**
 Masukkan token pap untuk melihat media dan beri reaksi emoji.  
-Setelah memberi emoji, kamu bisa tambahkan komentar yang akan dikirim ke pengirim pap (non-anonim).  
+Kamu juga bisa menambahkan komentar untuk pengirim pap.
 
 3️⃣ **📨 Menfes**
-Kirim pesan anonim ke channel publik.  
+Kirim pesan anonim ke channel publik.
 
 4️⃣ **🎬 Beli Video Premium**
 Klik tautan di bawah untuk membeli video premium:  
@@ -137,8 +127,6 @@ bot.on(['photo', 'video', 'document'], async (ctx) => {
   }
 
   const token = generateToken();
-  const now = new Date();
-  const timeStr = formatTime(now);
 
   mediaStore.set(token, {
     fileId: file.file_id,
@@ -146,16 +134,20 @@ bot.on(['photo', 'video', 'document'], async (ctx) => {
     mode: sess.mode,
     from: ctx.from.id,
     caption: ctx.message.caption || '',
-    createdAt: now.getTime()
+    createdAt: Date.now()
   });
 
   ctx.session.kirimPap = null;
-  await ctx.reply(`✅ Media diterima!\n🕒 Waktu kirim: *${timeStr}*\n🔐 Token: \`${token}\`\n\n📩 Token & waktu sudah dikirim ke admin.`, { parse_mode: 'Markdown' });
+  await ctx.reply(`✅ Media diterima!\n🔐 Token: \`${token}\`\n📩 Token ini juga dikirim ke admin.`, { parse_mode: 'Markdown' });
 
-  // === Kirim ke ADMIN dan CHANNEL ===
-  const msg = `📥 Pap baru dari ${getUserDisplay(ctx.from)}\n🕒 Waktu: *${timeStr}*\n🔐 Token: \`${token}\``;
+  // === Kirim ke ADMIN & CHANNEL ===
+  const msg = `📥 Pap baru dari ${getUserDisplay(ctx.from)}\n🔐 Token: \`${token}\``;
   await sendSafeMessage(ADMIN_ID, msg, { parse_mode: 'Markdown' });
-  await sendSafeMessage(PUBLIC_CHANNEL_ID, `📸 Pap baru masuk!\n🕒 <b>${timeStr}</b>\n🔐 Token: <code>${token}</code>\n📝 Kirim token ini ke bot`, { parse_mode: 'HTML' });
+
+  await sendSafeMessage(PUBLIC_CHANNEL_ID,
+    `📸 Pap baru masuk!\n🔐 Token: <code>${token}</code>\n📝 Kirim token ini ke bot untuk lihat media.`,
+    { parse_mode: 'HTML', protect_content: true }
+  );
 
   await showMainMenu(ctx);
 });
@@ -201,7 +193,15 @@ bot.on('text', async (ctx) => {
     return showMainMenu(ctx);
   }
 
-  // ===== Token Rating =====
+ // ===== Token Rating =====
+bot.on('text', async (ctx) => {
+  const text = ctx.message.text.trim();
+
+  if (text === '🔙 Kembali') {
+    ctx.session = {};
+    return showMainMenu(ctx);
+  }
+
   const rating = ctx.session.rating;
   if (rating?.stage === 'menunggu_token') {
     const data = mediaStore.get(text);
@@ -211,19 +211,27 @@ bot.on('text', async (ctx) => {
       return ctx.reply('⏳ Token kedaluwarsa.');
     }
 
-    // Kirim media sesuai token
-    const waktuPap = formatTime(new Date(data.createdAt));
-    const captionText = data.caption
-      ? `📝 *Keterangan:* ${data.caption}\n\n`
-      : '';
-    const caption = `📸 Pap dari ${data.mode}\n🕒 Dikirim: *${waktuPap}*\n🔐 Token: \`${text}\`\n${captionText}Pilih emoji reaksi di bawah:`;
+    const captionText = data.caption ? `📝 *Keterangan:* ${data.caption}\n\n` : '';
+    const caption = `📸 Pap dari ${data.mode}\n🔐 Token: \`${text}\`\n${captionText}Pilih emoji reaksi di bawah:`;
 
-    if (data.fileType === 'photo')
-      await ctx.replyWithPhoto(data.fileId, { caption, parse_mode: 'Markdown' });
-    else if (data.fileType === 'video')
-      await ctx.replyWithVideo(data.fileId, { caption, parse_mode: 'Markdown' });
-    else
-      await ctx.replyWithDocument(data.fileId, { caption, parse_mode: 'Markdown' });
+    let sentMessage;
+    if (data.fileType === 'photo') {
+      sentMessage = await ctx.replyWithPhoto(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
+    } else if (data.fileType === 'video') {
+      sentMessage = await ctx.replyWithVideo(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
+    } else {
+      sentMessage = await ctx.replyWithDocument(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
+    }
+
+    // ===== Auto delete media after 5 minutes (300.000 ms) =====
+    setTimeout(async () => {
+      try {
+        await ctx.deleteMessage(sentMessage.message_id);
+        console.log(`🗑️ Media dengan token ${text} dihapus otomatis setelah 5 menit.`);
+      } catch (err) {
+        console.log('⚠️ Gagal menghapus media:', err.description || err.message);
+      }
+    }, 5 * 60 * 1000);
 
     ctx.session.rating = { stage: 'menunggu_emoji', token: text };
     await ctx.reply('Pilih emoji reaksi kamu:', emojiKeyboard);
@@ -236,18 +244,13 @@ bot.on('text', async (ctx) => {
     const media = mediaStore.get(token);
     if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
 
-    const timeRate = formatTime();
-    await ctx.reply(
-      `🕒 Waktu reaksi: *${timeRate}*\nKetikkan komentar mengenai foto/video di atas (opsional), atau kirim "-" jika tidak ingin menulis komentar.`,
-      { parse_mode: 'Markdown' }
-    );
-
+    await ctx.reply('Ketikkan komentar kamu (atau kirim "-" jika tidak ingin menulis komentar).');
     pendingComments.set(ctx.from.id, { token, emoji: text });
     ctx.session.rating = null;
     return;
   }
 
-  // ===== Komentar Setelah Emoji =====
+  // ===== Komentar =====
   if (pendingComments.has(ctx.from.id)) {
     const { token, emoji } = pendingComments.get(ctx.from.id);
     pendingComments.delete(ctx.from.id);
@@ -255,13 +258,13 @@ bot.on('text', async (ctx) => {
     if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
 
     const comment = text !== '-' ? text : '(tanpa komentar)';
-    const waktu = formatTime();
     await sendSafeMessage(
       media.from,
-      `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!\n🕒 Waktu reaksi: *${waktu}*\n💬 Komentar: ${comment}`,
+      `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!\n💬 Komentar: ${comment}`,
       { parse_mode: 'Markdown' }
     );
-    await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!\n🕒 ${waktu}`, { parse_mode: 'Markdown' });
+
+    await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!`, { parse_mode: 'Markdown' });
     return showMainMenu(ctx);
   }
 
@@ -272,7 +275,22 @@ bot.on('text', async (ctx) => {
     ctx.session.menfes = null;
 
     const fullMsg = `📨 Menfes dari ${mode}:\n\n${pesan}`;
-    await sendSafeMessage(PUBLIC_CHANNEL_ID, fullMsg, { parse_mode: 'Markdown' });
+    await sendSafeMessage(PUBLIC_CHANNEL_ID, fullMsg, { parse_mode: 'Markdown', protect_content: true });
+    await sendSafeMessage(ADMIN_ID, fullMsg + `\n\n👤 Dari: ${getUserDisplay(ctx.from)}`, { parse_mode: 'Markdown' });
+
+    await ctx.reply('✅ Menfes kamu sudah dikirim!');
+    return showMainMenu(ctx);
+  }
+});
+
+  // ===== Menfes =====
+  if (ctx.session.menfes?.status === 'menunggu_pesan') {
+    const pesan = text;
+    const mode = ctx.session.menfes.mode;
+    ctx.session.menfes = null;
+
+    const fullMsg = `📨 Menfes dari ${mode}:\n\n${pesan}`;
+    await sendSafeMessage(PUBLIC_CHANNEL_ID, fullMsg, { parse_mode: 'Markdown', protect_content: true });
     await sendSafeMessage(ADMIN_ID, fullMsg + `\n\n👤 Dari: ${getUserDisplay(ctx.from)}`, { parse_mode: 'Markdown' });
 
     await ctx.reply('✅ Menfes kamu sudah dikirim!');
