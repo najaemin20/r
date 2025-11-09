@@ -193,15 +193,7 @@ bot.on('text', async (ctx) => {
     return showMainMenu(ctx);
   }
 
- // ===== Token Rating =====
-bot.on('text', async (ctx) => {
-  const text = ctx.message.text.trim();
-
-  if (text === '🔙 Kembali') {
-    ctx.session = {};
-    return showMainMenu(ctx);
-  }
-
+  // ===== Rate Pap =====
   const rating = ctx.session.rating;
   if (rating?.stage === 'menunggu_token') {
     const data = mediaStore.get(text);
@@ -223,15 +215,11 @@ bot.on('text', async (ctx) => {
       sentMessage = await ctx.replyWithDocument(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
     }
 
-    // ===== Auto delete media after 5 minutes (300.000 ms) =====
+    // Auto delete after 5 menit
     setTimeout(async () => {
-      try {
-        await ctx.deleteMessage(sentMessage.message_id);
-        console.log(`🗑️ Media dengan token ${text} dihapus otomatis setelah 5 menit.`);
-      } catch (err) {
-        console.log('⚠️ Gagal menghapus media:', err.description || err.message);
-      }
-    }, 5 * 60 * 1000);
+      try { await ctx.deleteMessage(sentMessage.message_id); } 
+      catch(e){ console.log('Gagal hapus media:', e.message); }
+    }, 5*60*1000);
 
     ctx.session.rating = { stage: 'menunggu_emoji', token: text };
     await ctx.reply('Pilih emoji reaksi kamu:', emojiKeyboard);
@@ -239,11 +227,11 @@ bot.on('text', async (ctx) => {
   }
 
   // ===== Emoji Reaction =====
-  if (ctx.session.rating?.stage === 'menunggu_emoji' && ['❤️','😍','🔥','😘','👍','💖','😂','🤯','😭','👎'].includes(text)) {
-    const token = ctx.session.rating.token;
+  if (rating?.stage === 'menunggu_emoji' && ['❤️','😍','🔥','😘','👍','💖','😂','🤯','😭','👎'].includes(text)) {
+    const token = rating.token;
     const media = mediaStore.get(token);
     if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
-
+    
     await ctx.reply('Ketikkan komentar kamu (atau kirim "-" jika tidak ingin menulis komentar).');
     pendingComments.set(ctx.from.id, { token, emoji: text });
     ctx.session.rating = null;
@@ -267,21 +255,6 @@ bot.on('text', async (ctx) => {
     await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!`, { parse_mode: 'Markdown' });
     return showMainMenu(ctx);
   }
-
-  // ===== Menfes =====
-  if (ctx.session.menfes?.status === 'menunggu_pesan') {
-    const pesan = text;
-    const mode = ctx.session.menfes.mode;
-    ctx.session.menfes = null;
-
-    const fullMsg = `📨 Menfes dari ${mode}:\n\n${pesan}`;
-    await sendSafeMessage(PUBLIC_CHANNEL_ID, fullMsg, { parse_mode: 'Markdown', protect_content: true });
-    await sendSafeMessage(ADMIN_ID, fullMsg + `\n\n👤 Dari: ${getUserDisplay(ctx.from)}`, { parse_mode: 'Markdown' });
-
-    await ctx.reply('✅ Menfes kamu sudah dikirim!');
-    return showMainMenu(ctx);
-  }
-});
 
   // ===== Menfes =====
   if (ctx.session.menfes?.status === 'menunggu_pesan') {
