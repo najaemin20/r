@@ -13,7 +13,7 @@ bot.use(session({ defaultSession: () => ({}) }));
 let botActive = true;
 const blockedUsers = new Set();
 const mediaStore = new Map();
-const pendingComments = new Map(); // token sementara untuk komentar
+const pendingComments = new Map();
 
 // ===== Utility =====
 function generateToken(length = 4) {
@@ -213,7 +213,11 @@ bot.on('text', async (ctx) => {
 
     // Kirim media sesuai token
     const waktuPap = formatTime(new Date(data.createdAt));
-    const caption = `📸 Pap dari ${data.mode}\n🕒 Dikirim: *${waktuPap}*\n🔐 Token: \`${text}\`\n\nPilih emoji reaksi di bawah:`;
+    const captionText = data.caption
+      ? `📝 *Keterangan:* ${data.caption}\n\n`
+      : '';
+    const caption = `📸 Pap dari ${data.mode}\n🕒 Dikirim: *${waktuPap}*\n🔐 Token: \`${text}\`\n${captionText}Pilih emoji reaksi di bawah:`;
+
     if (data.fileType === 'photo')
       await ctx.replyWithPhoto(data.fileId, { caption, parse_mode: 'Markdown' });
     else if (data.fileType === 'video')
@@ -233,7 +237,10 @@ bot.on('text', async (ctx) => {
     if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
 
     const timeRate = formatTime();
-    await ctx.reply(`🕒 Waktu reaksi: *${timeRate}*\nSekarang tulis komentar tambahan (opsional), atau kirim "-" jika tidak ingin menulis komentar.`, { parse_mode: 'Markdown' });
+    await ctx.reply(
+      `🕒 Waktu reaksi: *${timeRate}*\nKetikkan komentar mengenai foto/video di atas (opsional), atau kirim "-" jika tidak ingin menulis komentar.`,
+      { parse_mode: 'Markdown' }
+    );
 
     pendingComments.set(ctx.from.id, { token, emoji: text });
     ctx.session.rating = null;
