@@ -26,6 +26,15 @@ function getUserDisplay(user) {
   return `[${user.first_name}](tg://user?id=${user.id})`;
 }
 
+function formatTime(date = new Date()) {
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const y = date.getFullYear();
+  const h = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${d}-${m}-${y} ${h}:${min}`;
+}
+
 async function sendSafeMessage(userId, message, extra = {}) {
   try {
     await bot.telegram.sendMessage(userId, message, extra);
@@ -41,9 +50,10 @@ async function sendSafeMessage(userId, message, extra = {}) {
 async function showMainMenu(ctx) {
   const markup = Markup.keyboard([
     ['📊 Rate Pap', '📸 Kirim Pap'],
-    ['📨 Menfes', '🎭 Profile'],
-    ['🎥 Beli Video Premium', '/help']
+    ['📨 Menfes', '🎥 Beli Video Premium'],
+    ['ℹ️ /help']
   ]).resize();
+
   await ctx.reply('Selamat datang! Pilih menu di bawah ini:', markup);
 }
 
@@ -54,7 +64,7 @@ bot.help(async (ctx) => {
 
 1️⃣ **📸 Kirim Pap**
 Kirim foto/video anonim atau dengan identitas kamu.  
-→ Bot akan memberi token unik.  
+→ Bot akan memberi token unik + waktu kirim.  
 
 2️⃣ **📊 Rate Pap**
 Masukkan token pap untuk melihat media dan beri reaksi emoji.  
@@ -63,10 +73,7 @@ Setelah memberi emoji, kamu bisa tambahkan komentar yang akan dikirim ke pengiri
 3️⃣ **📨 Menfes**
 Kirim pesan anonim ke channel publik.  
 
-4️⃣ **🎭 Profile**
-Lihat profil kamu, jumlah pap yang pernah dikirim.  
-
-5️⃣ **🎥 Beli Video Premium**
+4️⃣ **🎥 Beli Video Premium**
 Link pembelian ke bot lain.  
 
 🛠 Admin Command:
@@ -129,19 +136,25 @@ bot.on(['photo', 'video', 'document'], async (ctx) => {
   }
 
   const token = generateToken();
+  const now = new Date();
+  const timeStr = formatTime(now);
+
   mediaStore.set(token, {
     fileId: file.file_id,
     fileType,
     mode: sess.mode,
     from: ctx.from.id,
     caption: ctx.message.caption || '',
-    createdAt: Date.now()
+    createdAt: now.getTime()
   });
 
   ctx.session.kirimPap = null;
-  await ctx.reply('✅ Media diterima! Token sudah dikirim ke admin.');
-  await sendSafeMessage(ADMIN_ID, `📥 Pap baru dari ${getUserDisplay(ctx.from)}\n🔐 Token: \`${token}\``, { parse_mode: 'Markdown' });
-  await sendSafeMessage(PUBLIC_CHANNEL_ID, `📸 Pap baru masuk!\n🔐 Token: <code>${token}</code>\n📝 Kirim token ini ke bot`, { parse_mode: 'HTML' });
+  await ctx.reply('✅ Media diterima! Token dan waktu kirim sudah dikirim ke admin.');
+
+  // === Kirim ke ADMIN dan CHANNEL ===
+  const msg = `📥 Pap baru dari ${getUserDisplay(ctx.from)}\n🕒 Waktu: *${timeStr}*\n🔐 Token: \`${token}\``;
+  await sendSafeMessage(ADMIN_ID, msg, { parse_mode: 'Markdown' });
+  await sendSafeMessage(PUBLIC_CHANNEL_ID, `📸 Pap baru masuk!\n🕒 <b>${timeStr}</b>\n🔐 Token: <code>${token}</code>\n📝 Kirim token ini ke bot`, { parse_mode: 'HTML' });
 
   await showMainMenu(ctx);
 });
@@ -154,13 +167,23 @@ bot.hears('📊 Rate Pap', async (ctx) => {
   ]).resize());
 });
 
+// ===== Emoji Keyboard =====
 const emojiKeyboard = Markup.keyboard([
   ['❤️', '😍', '🔥', '😘', '👍'],
   ['💖', '😂', '🤯', '😭', '👎'],
   ['🔙 Kembali']
 ]).resize();
 
-// ===== Teks umum =====
+// ===== Menfes =====
+bot.hears('📨 Menfes', async (ctx) => {
+  ctx.session.state = 'menfes';
+  await ctx.reply('Ingin mengirim menfes sebagai?', Markup.keyboard([
+    ['🙈 Anonim', '🪪 Identitas'],
+    ['🔙 Kembali']
+  ]).resize());
+});
+
+// ===== Teks Umum =====
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
 
@@ -169,7 +192,7 @@ bot.on('text', async (ctx) => {
     return showMainMenu(ctx);
   }
 
-  // Token rating
+  // ===== Token Rating =====
   const rating = ctx.session.rating;
   if (rating?.stage === 'menunggu_token') {
     const data = mediaStore.get(text);
@@ -186,7 +209,7 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // Emoji reaction
+  // ===== Emoji Reaction =====
   if (ctx.session.rating?.stage === 'menunggu_emoji' && ['❤️','😍','🔥','😘','👍','💖','😂','🤯','😭','👎'].includes(text)) {
     const token = ctx.session.rating.token;
     const media = mediaStore.get(token);
@@ -198,7 +221,7 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // Komentar setelah emoji
+  // ===== Komentar Setelah Emoji =====
   if (pendingComments.has(ctx.from.id)) {
     const { token, emoji } = pendingComments.get(ctx.from.id);
     pendingComments.delete(ctx.from.id);
@@ -215,7 +238,7 @@ bot.on('text', async (ctx) => {
     return showMainMenu(ctx);
   }
 
-  // Menfes
+  // ===== Menfes =====
   if (ctx.session.menfes?.status === 'menunggu_pesan') {
     const pesan = text;
     const mode = ctx.session.menfes.mode;
@@ -228,28 +251,6 @@ bot.on('text', async (ctx) => {
     await ctx.reply('✅ Menfes kamu sudah dikirim!');
     return showMainMenu(ctx);
   }
-});
-
-// ===== Profile =====
-bot.hears('🎭 Profile', async (ctx) => {
-  const userId = ctx.from.id;
-  const username = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name;
-  let papCount = 0;
-  for (const [, val] of mediaStore) {
-    if (val.from === userId) papCount++;
-  }
-
-  const width = 400, height = 200;
-  const canvas = createCanvas(width, height);
-  const c = canvas.getContext('2d');
-  c.fillStyle = '#1e293b'; c.fillRect(0, 0, width, height);
-  c.fillStyle = '#fff'; c.font = 'bold 26px Sans-serif'; c.fillText('Profile Card', 20, 40);
-  c.font = '22px Sans-serif'; c.fillText(`User: ${username}`, 20, 90);
-  c.font = '20px Sans-serif'; c.fillText(`Jumlah Pap: ${papCount}`, 20, 130);
-  c.font = 'italic 16px Sans-serif'; c.fillStyle = '#ccc'; c.fillText('Terima kasih sudah aktif!', 20, height - 30);
-  const buffer = canvas.toBuffer();
-
-  await ctx.replyWithPhoto({ source: buffer }, { caption: `✨ Profile ${username}` });
 });
 
 // ===== Admin Commands =====
