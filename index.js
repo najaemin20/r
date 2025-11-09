@@ -50,15 +50,15 @@ async function sendSafeMessage(userId, message, extra = {}) {
 async function showMainMenu(ctx) {
   const markup = Markup.keyboard([
     ['📊 Rate Pap', '📸 Kirim Pap'],
-    ['📨 Menfes', '🎥 Beli Video Premium'],
-    ['ℹ️ /help']
+    ['📨 Menfes', '🎬 Beli Video Premium'],
+    ['ℹ️ Help']
   ]).resize();
 
   await ctx.reply('Selamat datang! Pilih menu di bawah ini:', markup);
 }
 
-// ===== /help =====
-bot.help(async (ctx) => {
+// ===== HELP Button =====
+bot.hears('ℹ️ Help', async (ctx) => {
   const helpMsg = `
 📘 *Panduan Penggunaan Bot PAP*
 
@@ -73,8 +73,9 @@ Setelah memberi emoji, kamu bisa tambahkan komentar yang akan dikirim ke pengiri
 3️⃣ **📨 Menfes**
 Kirim pesan anonim ke channel publik.  
 
-4️⃣ **🎥 Beli Video Premium**
-Link pembelian ke bot lain.  
+4️⃣ **🎬 Beli Video Premium**
+Klik tautan di bawah untuk membeli video premium:  
+👉 [@vvip_3_bot](https://t.me/vvip_3_bot)
 
 🛠 Admin Command:
 - /boton → Nyalakan bot  
@@ -149,7 +150,7 @@ bot.on(['photo', 'video', 'document'], async (ctx) => {
   });
 
   ctx.session.kirimPap = null;
-  await ctx.reply('✅ Media diterima! Token dan waktu kirim sudah dikirim ke admin.');
+  await ctx.reply(`✅ Media diterima!\n🕒 Waktu kirim: *${timeStr}*\n🔐 Token: \`${token}\`\n\n📩 Token & waktu sudah dikirim ke admin.`, { parse_mode: 'Markdown' });
 
   // === Kirim ke ADMIN dan CHANNEL ===
   const msg = `📥 Pap baru dari ${getUserDisplay(ctx.from)}\n🕒 Waktu: *${timeStr}*\n🔐 Token: \`${token}\``;
@@ -162,7 +163,7 @@ bot.on(['photo', 'video', 'document'], async (ctx) => {
 // ===== Rate Pap =====
 bot.hears('📊 Rate Pap', async (ctx) => {
   ctx.session.rating = { stage: 'menunggu_token' };
-  await ctx.reply('🔢 Masukkan token pap yang ingin kamu beri reaksi:', Markup.keyboard([
+  await ctx.reply('🔢 Masukkan token pap yang ingin kamu lihat dan beri reaksi:', Markup.keyboard([
     ['🔙 Kembali']
   ]).resize());
 });
@@ -183,6 +184,14 @@ bot.hears('📨 Menfes', async (ctx) => {
   ]).resize());
 });
 
+// ===== Beli Video Premium =====
+bot.hears('🎬 Beli Video Premium', async (ctx) => {
+  await ctx.reply(
+    `🎬 Klik tautan di bawah untuk membeli video premium:\n👉 [@vvip_3_bot](https://t.me/vvip_3_bot)`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
 // ===== Teks Umum =====
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
@@ -201,8 +210,16 @@ bot.on('text', async (ctx) => {
       mediaStore.delete(text);
       return ctx.reply('⏳ Token kedaluwarsa.');
     }
-    if (ctx.from.id === data.from)
-      return ctx.reply('⚠️ Kamu tidak bisa bereaksi pada pap sendiri.');
+
+    // Kirim media sesuai token
+    const waktuPap = formatTime(new Date(data.createdAt));
+    const caption = `📸 Pap dari ${data.mode}\n🕒 Dikirim: *${waktuPap}*\n🔐 Token: \`${text}\`\n\nPilih emoji reaksi di bawah:`;
+    if (data.fileType === 'photo')
+      await ctx.replyWithPhoto(data.fileId, { caption, parse_mode: 'Markdown' });
+    else if (data.fileType === 'video')
+      await ctx.replyWithVideo(data.fileId, { caption, parse_mode: 'Markdown' });
+    else
+      await ctx.replyWithDocument(data.fileId, { caption, parse_mode: 'Markdown' });
 
     ctx.session.rating = { stage: 'menunggu_emoji', token: text };
     await ctx.reply('Pilih emoji reaksi kamu:', emojiKeyboard);
@@ -215,7 +232,9 @@ bot.on('text', async (ctx) => {
     const media = mediaStore.get(token);
     if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
 
-    await ctx.reply('Tulis komentar tambahan (opsional), atau kirim "-" jika tidak ingin menulis komentar.');
+    const timeRate = formatTime();
+    await ctx.reply(`🕒 Waktu reaksi: *${timeRate}*\nSekarang tulis komentar tambahan (opsional), atau kirim "-" jika tidak ingin menulis komentar.`, { parse_mode: 'Markdown' });
+
     pendingComments.set(ctx.from.id, { token, emoji: text });
     ctx.session.rating = null;
     return;
@@ -229,12 +248,13 @@ bot.on('text', async (ctx) => {
     if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
 
     const comment = text !== '-' ? text : '(tanpa komentar)';
+    const waktu = formatTime();
     await sendSafeMessage(
       media.from,
-      `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!\n💬 Komentar: ${comment}`,
+      `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!\n🕒 Waktu reaksi: *${waktu}*\n💬 Komentar: ${comment}`,
       { parse_mode: 'Markdown' }
     );
-    await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!`);
+    await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!\n🕒 ${waktu}`, { parse_mode: 'Markdown' });
     return showMainMenu(ctx);
   }
 
