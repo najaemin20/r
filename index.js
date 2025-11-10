@@ -146,7 +146,7 @@ bot.on(['photo', 'video', 'document'], async (ctx) => {
 
   await sendSafeMessage(PUBLIC_CHANNEL_ID,
     `📸 Pap baru masuk!\n🔐 Token: <code>${token}</code>\n📝 Kirim token ini ke bot untuk lihat media.`,
-    { parse_mode: 'HTML', protect_content: true }
+    { parse_mode: 'HTML', protect_content: true } // Media info tidak bisa diforward
   );
 
   await showMainMenu(ctx);
@@ -263,7 +263,7 @@ bot.on('text', async (ctx) => {
     ctx.session.menfes = null;
 
     const fullMsg = `📨 Menfes dari ${mode}:\n\n${pesan}`;
-    await sendSafeMessage(PUBLIC_CHANNEL_ID, fullMsg, { parse_mode: 'Markdown', protect_content: true });
+    await sendSafeMessage(PUBLIC_CHANNEL_ID, fullMsg, { parse_mode: 'Markdown' }); // teks boleh diforward
     await sendSafeMessage(ADMIN_ID, fullMsg + `\n\n👤 Dari: ${getUserDisplay(ctx.from)}`, { parse_mode: 'Markdown' });
 
     await ctx.reply('✅ Menfes kamu sudah dikirim!');
