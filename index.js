@@ -226,34 +226,71 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // ===== Emoji Reaction =====
+   // ===== Emoji Reaction =====
   if (rating?.stage === 'menunggu_emoji' && ['❤️','😍','🔥','😘','👍','💖','😂','🤯','😭','👎'].includes(text)) {
     const token = rating.token;
     const media = mediaStore.get(token);
     if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
-    
-    await ctx.reply('Ketikkan komentar kamu (atau kirim "-" jika tidak ingin menulis komentar).');
-    pendingComments.set(ctx.from.id, { token, emoji: text });
+
+    // simpan data reaksi sementara
+    pendingComments.set(ctx.from.id, { token, emoji: text, stage: 'tanya_komentar' });
     ctx.session.rating = null;
+
+    // kirim tombol pilihan
+    const markup = Markup.keyboard([
+      ['📝 Kirim komentar', '❌ Tidak kirim komentar'],
+      ['🔙 Kembali']
+    ]).resize();
+
+    await ctx.reply(`Kamu memberi reaksi ${text}. Ingin kirim komentar juga?`, markup);
     return;
   }
 
-  // ===== Komentar =====
+  // ===== Tahap tanya komentar =====
   if (pendingComments.has(ctx.from.id)) {
-    const { token, emoji } = pendingComments.get(ctx.from.id);
-    pendingComments.delete(ctx.from.id);
-    const media = mediaStore.get(token);
-    if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
+    const pending = pendingComments.get(ctx.from.id);
 
-    const comment = text !== '-' ? text : '(tanpa komentar)';
-    await sendSafeMessage(
-      media.from,
-      `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!\n💬 Komentar: ${comment}`,
-      { parse_mode: 'Markdown' }
-    );
+    // jika user memilih "Tidak kirim komentar"
+    if (text === '❌ Tidak kirim komentar') {
+      const { token, emoji } = pending;
+      pendingComments.delete(ctx.from.id);
+      const media = mediaStore.get(token);
+      if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
 
-    await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!`, { parse_mode: 'Markdown' });
-    return showMainMenu(ctx);
+      await sendSafeMessage(
+        media.from,
+        `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!\n💬 Komentar: (tanpa komentar)`,
+        { parse_mode: 'Markdown' }
+      );
+
+      await ctx.reply(`✅ Reaksi ${emoji} telah dikirim ke pengirim pap!`, { parse_mode: 'Markdown' });
+      return showMainMenu(ctx);
+    }
+
+    // jika user memilih "Kirim komentar"
+    if (text === '📝 Kirim komentar') {
+      pending.stage = 'menunggu_isi_komentar';
+      await ctx.reply('✍️ Tulis komentar kamu di bawah ini:');
+      return;
+    }
+
+    // jika user menulis komentar
+    if (pending.stage === 'menunggu_isi_komentar') {
+      const { token, emoji } = pending;
+      const media = mediaStore.get(token);
+      if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
+      pendingComments.delete(ctx.from.id);
+
+      const comment = text;
+      await sendSafeMessage(
+        media.from,
+        `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!\n💬 Komentar: ${comment}`,
+        { parse_mode: 'Markdown' }
+      );
+
+      await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!`, { parse_mode: 'Markdown' });
+      return showMainMenu(ctx);
+    }
   }
 
   // ===== Menfes =====
