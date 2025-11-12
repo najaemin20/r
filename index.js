@@ -1,8 +1,11 @@
+// bot.js
 const { Telegraf, Markup, session } = require('telegraf');
 const crypto = require('crypto');
 
 // === Konfigurasi ===
-const BOT_TOKEN = '7524016177:AAEDhnG7UZ2n8BL6dXQA66_gi1IzReTazl4';
+// Ganti dengan process.env.BOT_TOKEN atau langsung masukkan token di sini.
+// PENTING: jangan commit token ke repo publik.
+const BOT_TOKEN = process.env.BOT_TOKEN || '7524016177:AAEDhnG7UZ2n8BL6dXQA66_gi1IzReTazl4';
 const PUBLIC_CHANNEL_ID = '-1002857800900';
 const ADMIN_ID = 6468926488;
 const TOKEN_VALID_MS = 24 * 60 * 60 * 1000; // 24 jam
@@ -13,8 +16,8 @@ bot.use(session({ defaultSession: () => ({}) }));
 
 let botActive = true;
 const blockedUsers = new Set();
-const mediaStore = new Map();
-const pendingComments = new Map();
+const mediaStore = new Map(); // token -> {fileId, fileType, mode, from, caption, createdAt}
+const pendingComments = new Map(); // reactorId -> { token, emoji, stage }
 
 // ===== Utility =====
 function generateToken(length = 4) {
@@ -31,9 +34,12 @@ async function sendSafeMessage(userId, message, extra = {}) {
   try {
     await bot.telegram.sendMessage(userId, message, extra);
   } catch (err) {
-    if (err.code === 403) {
+    // Jika bot diblokir
+    if (err && err.code === 403) {
       blockedUsers.add(userId);
       console.warn(`❌ User ${userId} memblokir bot.`);
+    } else {
+      console.error('Gagal kirim pesan:', err && err.message ? err.message : err);
     }
   }
 }
@@ -60,7 +66,7 @@ Kirim foto/video/audio/VN anonim atau dengan identitas kamu.
 
 2️⃣ **📊 Rate Pap**
 Masukkan token pap untuk melihat media dan beri reaksi emoji.  
-Kamu juga bisa menambahkan komentar untuk pengirim pap.
+Kamu juga bisa menambahkan komentar untuk pengirim pap setelah reaksi dikirim.
 
 3️⃣ **📨 Menfes**
 Kirim pesan anonim ke channel publik.
@@ -148,13 +154,13 @@ bot.on(['photo', 'video', 'document', 'voice', 'audio'], async (ctx) => {
   ctx.session.kirimPap = null;
   await ctx.reply(`✅ Media diterima!\n🔐 Token: \`${token}\`\n📩 Token ini juga dikirim ke admin.`, { parse_mode: 'Markdown' });
 
-  // === Kirim ke ADMIN & CHANNEL ===
+  // === Kirim ke ADMIN & CHANNEL (teks -> boleh diforward) ===
   const msg = `📥 Pap baru dari ${getUserDisplay(ctx.from)}\n🔐 Token: \`${token}\``;
   await sendSafeMessage(ADMIN_ID, msg, { parse_mode: 'Markdown' });
 
   await sendSafeMessage(PUBLIC_CHANNEL_ID,
     `📸 Pap baru masuk!\n🔐 Token: <code>${token}</code>\n📝 Kirim token ini ke bot untuk lihat media.`,
-    { parse_mode: 'HTML' } // teks bebas diforward
+    { parse_mode: 'HTML' }
   );
 
   await showMainMenu(ctx);
@@ -224,19 +230,20 @@ bot.on('text', async (ctx) => {
       } else if (data.fileType === 'document') {
         sentMessage = await ctx.replyWithDocument(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
       } else if (data.fileType === 'voice') {
+        // voice note
         sentMessage = await ctx.replyWithVoice(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
       } else if (data.fileType === 'audio') {
         sentMessage = await ctx.replyWithAudio(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
       }
     } catch (err) {
-      console.error('Gagal kirim media:', err.message);
+      console.error('Gagal kirim media:', err && err.message ? err.message : err);
       return ctx.reply('⚠️ Gagal memuat media.');
     }
 
     // Auto delete after 5 menit
     setTimeout(async () => {
       try { await ctx.deleteMessage(sentMessage.message_id); } 
-      catch(e){ console.log('Gagal hapus media:', e.message); }
+      catch(e){ console.log('Gagal hapus media:', e && e.message ? e.message : e); }
     }, 5*60*1000);
 
     ctx.session.rating = { stage: 'menunggu_emoji', token: text };
@@ -244,64 +251,77 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // ===== Emoji Reaction =====
+  // ===== Emoji Reaction: langsung kirim reaksi ke pemilik media, lalu tanya komentar =====
   if (rating?.stage === 'menunggu_emoji' && ['❤️','😍','🔥','😘','👍','💖','😂','🤯','😭','👎'].includes(text)) {
     const token = rating.token;
     const media = mediaStore.get(token);
     if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
 
+    // Kirim reaksi segera ke pemilik media (tanpa komentar)
+    try {
+      await sendSafeMessage(
+        media.from,
+        `📸 Pap kamu mendapat reaksi ${text} dari ${getUserDisplay(ctx.from)}!\n💬 Komentar: (belum ada)`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (e) {
+      console.error('Gagal kirim reaksi ke pemilik media:', e && e.message ? e.message : e);
+    }
+
+    // Simpan pending untuk memungkinkan user menambahkan komentar (opsional)
     pendingComments.set(ctx.from.id, { token, emoji: text, stage: 'tanya_komentar' });
+
+    // Reset rating session (so they can open other flows but we still track pendingComments)
     ctx.session.rating = null;
 
+    // Tanyakan apakah ingin mengirim komentar (setelah reaksi sudah dikirim)
     const markup = Markup.keyboard([
       ['📝 Kirim komentar', '❌ Tidak kirim komentar'],
       ['🔙 Kembali']
     ]).resize();
 
-    await ctx.reply(`Kamu memberi reaksi ${text}. Ingin kirim komentar juga?`, markup);
+    await ctx.reply(`✅ Reaksi ${text} telah dikirim ke pengirim pap! Ingin menambahkan komentar juga?`, markup);
     return;
   }
 
-  // ===== Tahap tanya komentar =====
+  // ===== Tahap tanya komentar setelah reaksi otomatis =====
   if (pendingComments.has(ctx.from.id)) {
     const pending = pendingComments.get(ctx.from.id);
 
+    // Jika user memilih tidak mengirim komentar -> cukup hapus pending dan kembali ke menu
     if (text === '❌ Tidak kirim komentar') {
-      const { token, emoji } = pending;
       pendingComments.delete(ctx.from.id);
-      const media = mediaStore.get(token);
-      if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
-
-      await sendSafeMessage(
-        media.from,
-        `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!\n💬 Komentar: (tanpa komentar)`,
-        { parse_mode: 'Markdown' }
-      );
-
-      await ctx.reply(`✅ Reaksi ${emoji} telah dikirim ke pengirim pap!`);
+      await ctx.reply('✅ Oke — komentar tidak dikirim. Terima kasih!', { reply_markup: { remove_keyboard: true } });
       return showMainMenu(ctx);
     }
 
+    // Jika user pilih mengirim komentar -> minta isi komentar
     if (text === '📝 Kirim komentar') {
       pending.stage = 'menunggu_isi_komentar';
       await ctx.reply('✍️ Tulis komentar kamu di bawah ini:');
       return;
     }
 
+    // Jika user menulis komentar (stage menunggu_isi_komentar)
     if (pending.stage === 'menunggu_isi_komentar') {
       const { token, emoji } = pending;
       const media = mediaStore.get(token);
-      if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
-      pendingComments.delete(ctx.from.id);
+      if (!media) {
+        pendingComments.delete(ctx.from.id);
+        return ctx.reply('⚠️ Pap tidak ditemukan.');
+      }
 
       const comment = text;
+      pendingComments.delete(ctx.from.id);
+
+      // Kirim komentar terpisah ke pemilik media
       await sendSafeMessage(
         media.from,
-        `📸 Pap kamu mendapat reaksi ${emoji} dari ${getUserDisplay(ctx.from)}!\n💬 Komentar: ${comment}`,
+        `📸 Pap kamu mendapat komentar untuk reaksi ${emoji} dari ${getUserDisplay(ctx.from)}:\n\n💬 ${comment}`,
         { parse_mode: 'Markdown' }
       );
 
-      await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!`);
+      await ctx.reply(`✅ Komentar kamu telah dikirim ke pengirim pap!`);
       return showMainMenu(ctx);
     }
   }
