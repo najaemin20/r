@@ -1,11 +1,13 @@
 const { Telegraf, Markup, session } = require('telegraf');
 const crypto = require('crypto');
 
+// === Konfigurasi ===
 const BOT_TOKEN = '7524016177:AAEDhnG7UZ2n8BL6dXQA66_gi1IzReTazl4';
 const PUBLIC_CHANNEL_ID = '-1002857800900';
 const ADMIN_ID = 6468926488;
 const TOKEN_VALID_MS = 24 * 60 * 60 * 1000; // 24 jam
 
+// === Setup Bot ===
 const bot = new Telegraf(BOT_TOKEN);
 bot.use(session({ defaultSession: () => ({}) }));
 
@@ -53,7 +55,7 @@ bot.hears('ℹ️ Help', async (ctx) => {
 📘 *Panduan Penggunaan Bot PAP*
 
 1️⃣ **📸 Kirim Pap**
-Kirim foto/video anonim atau dengan identitas kamu.  
+Kirim foto/video/audio/VN anonim atau dengan identitas kamu.  
 → Bot akan memberi token unik.
 
 2️⃣ **📊 Rate Pap**
@@ -108,8 +110,8 @@ bot.hears(['🙈 Anonim', '🪪 Identitas'], async (ctx) => {
   }
 });
 
-// ===== Kirim Media =====
-bot.on(['photo', 'video', 'document'], async (ctx) => {
+// ===== Kirim Media (termasuk VN & Audio) =====
+bot.on(['photo', 'video', 'document', 'voice', 'audio'], async (ctx) => {
   const sess = ctx.session.kirimPap;
   if (!sess || sess.status !== 'menunggu_media')
     return ctx.reply('⚠️ Pilih dulu menu "📸 Kirim Pap".');
@@ -124,6 +126,12 @@ bot.on(['photo', 'video', 'document'], async (ctx) => {
   } else if (ctx.message.document) {
     file = ctx.message.document;
     fileType = 'document';
+  } else if (ctx.message.voice) {
+    file = ctx.message.voice;
+    fileType = 'voice';
+  } else if (ctx.message.audio) {
+    file = ctx.message.audio;
+    fileType = 'audio';
   }
 
   const token = generateToken();
@@ -146,7 +154,7 @@ bot.on(['photo', 'video', 'document'], async (ctx) => {
 
   await sendSafeMessage(PUBLIC_CHANNEL_ID,
     `📸 Pap baru masuk!\n🔐 Token: <code>${token}</code>\n📝 Kirim token ini ke bot untuk lihat media.`,
-    { parse_mode: 'HTML', protect_content: true } // Media info tidak bisa diforward
+    { parse_mode: 'HTML' } // teks bebas diforward
   );
 
   await showMainMenu(ctx);
@@ -184,7 +192,7 @@ bot.hears('🎬 Beli Video Premium', async (ctx) => {
   );
 });
 
-// ===== Teks Umum =====
+// ===== Proses Teks =====
 bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
 
@@ -193,8 +201,9 @@ bot.on('text', async (ctx) => {
     return showMainMenu(ctx);
   }
 
-  // ===== Rate Pap =====
   const rating = ctx.session.rating;
+
+  // ===== Rate Pap: Masukkan Token =====
   if (rating?.stage === 'menunggu_token') {
     const data = mediaStore.get(text);
     if (!data) return ctx.reply('❌ Token tidak valid.');
@@ -207,12 +216,21 @@ bot.on('text', async (ctx) => {
     const caption = `📸 Pap dari ${data.mode}\n🔐 Token: \`${text}\`\n${captionText}Pilih emoji reaksi di bawah:`;
 
     let sentMessage;
-    if (data.fileType === 'photo') {
-      sentMessage = await ctx.replyWithPhoto(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
-    } else if (data.fileType === 'video') {
-      sentMessage = await ctx.replyWithVideo(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
-    } else {
-      sentMessage = await ctx.replyWithDocument(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
+    try {
+      if (data.fileType === 'photo') {
+        sentMessage = await ctx.replyWithPhoto(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
+      } else if (data.fileType === 'video') {
+        sentMessage = await ctx.replyWithVideo(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
+      } else if (data.fileType === 'document') {
+        sentMessage = await ctx.replyWithDocument(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
+      } else if (data.fileType === 'voice') {
+        sentMessage = await ctx.replyWithVoice(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
+      } else if (data.fileType === 'audio') {
+        sentMessage = await ctx.replyWithAudio(data.fileId, { caption, parse_mode: 'Markdown', protect_content: true });
+      }
+    } catch (err) {
+      console.error('Gagal kirim media:', err.message);
+      return ctx.reply('⚠️ Gagal memuat media.');
     }
 
     // Auto delete after 5 menit
@@ -226,17 +244,15 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-   // ===== Emoji Reaction =====
+  // ===== Emoji Reaction =====
   if (rating?.stage === 'menunggu_emoji' && ['❤️','😍','🔥','😘','👍','💖','😂','🤯','😭','👎'].includes(text)) {
     const token = rating.token;
     const media = mediaStore.get(token);
     if (!media) return ctx.reply('⚠️ Pap tidak ditemukan.');
 
-    // simpan data reaksi sementara
     pendingComments.set(ctx.from.id, { token, emoji: text, stage: 'tanya_komentar' });
     ctx.session.rating = null;
 
-    // kirim tombol pilihan
     const markup = Markup.keyboard([
       ['📝 Kirim komentar', '❌ Tidak kirim komentar'],
       ['🔙 Kembali']
@@ -250,7 +266,6 @@ bot.on('text', async (ctx) => {
   if (pendingComments.has(ctx.from.id)) {
     const pending = pendingComments.get(ctx.from.id);
 
-    // jika user memilih "Tidak kirim komentar"
     if (text === '❌ Tidak kirim komentar') {
       const { token, emoji } = pending;
       pendingComments.delete(ctx.from.id);
@@ -263,18 +278,16 @@ bot.on('text', async (ctx) => {
         { parse_mode: 'Markdown' }
       );
 
-      await ctx.reply(`✅ Reaksi ${emoji} telah dikirim ke pengirim pap!`, { parse_mode: 'Markdown' });
+      await ctx.reply(`✅ Reaksi ${emoji} telah dikirim ke pengirim pap!`);
       return showMainMenu(ctx);
     }
 
-    // jika user memilih "Kirim komentar"
     if (text === '📝 Kirim komentar') {
       pending.stage = 'menunggu_isi_komentar';
       await ctx.reply('✍️ Tulis komentar kamu di bawah ini:');
       return;
     }
 
-    // jika user menulis komentar
     if (pending.stage === 'menunggu_isi_komentar') {
       const { token, emoji } = pending;
       const media = mediaStore.get(token);
@@ -288,7 +301,7 @@ bot.on('text', async (ctx) => {
         { parse_mode: 'Markdown' }
       );
 
-      await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!`, { parse_mode: 'Markdown' });
+      await ctx.reply(`✅ Reaksi ${emoji} dan komentar kamu telah dikirim ke pengirim pap!`);
       return showMainMenu(ctx);
     }
   }
@@ -300,7 +313,7 @@ bot.on('text', async (ctx) => {
     ctx.session.menfes = null;
 
     const fullMsg = `📨 Menfes dari ${mode}:\n\n${pesan}`;
-    await sendSafeMessage(PUBLIC_CHANNEL_ID, fullMsg, { parse_mode: 'Markdown' }); // teks boleh diforward
+    await sendSafeMessage(PUBLIC_CHANNEL_ID, fullMsg, { parse_mode: 'Markdown' });
     await sendSafeMessage(ADMIN_ID, fullMsg + `\n\n👤 Dari: ${getUserDisplay(ctx.from)}`, { parse_mode: 'Markdown' });
 
     await ctx.reply('✅ Menfes kamu sudah dikirim!');
