@@ -112,13 +112,10 @@ bot.on(['photo','video','document','voice','audio'], async (ctx) => {
     mode: ctx.session.kirimPap.mode
   });
 
-  // Kirim ke channel publik dengan tombol rate
+  // Kirim ke channel publik dengan text biasa (bukan tombol)
   await sendSafeMessage(
     PUBLIC_CHANNEL_ID,
-    `📸 PAP Baru\n🔐 ${token}`,
-    Markup.inlineKeyboard([
-      Markup.button.url('Kirim token ke bot', 'https://t.me/rate_seme_uke_bot')
-    ])
+    `📸 PAP Baru\n🔐 Token: \`${token}\`\nKirim token ke emoji ke @rate_seme_uke_bot`
   );
 
   // Kirim info pengirim ke admin
@@ -170,18 +167,41 @@ bot.on('text', async (ctx, next) => {
 🔐 Token: \`${text}\`
 
 Pilih reaksi`;
+// Kirim media ke user untuk rating
+if (media.fileType === 'photo')
+  await ctx.replyWithPhoto(media.fileId, {
+    caption,
+    parse_mode: 'Markdown',
+    protect_content: true
+  });
 
-    // Kirim media ke user untuk rating
-    if (media.fileType === 'photo')
-      await ctx.replyWithPhoto(media.fileId, { caption, parse_mode:'Markdown' });
-    if (media.fileType === 'video')
-      await ctx.replyWithVideo(media.fileId, { caption, parse_mode:'Markdown' });
-    if (media.fileType === 'document')
-      await ctx.replyWithDocument(media.fileId, { caption, parse_mode:'Markdown' });
-    if (media.fileType === 'voice')
-      await ctx.replyWithVoice(media.fileId, { caption, parse_mode:'Markdown' });
-    if (media.fileType === 'audio')
-      await ctx.replyWithAudio(media.fileId, { caption, parse_mode:'Markdown' });
+if (media.fileType === 'video')
+  await ctx.replyWithVideo(media.fileId, {
+    caption,
+    parse_mode: 'Markdown',
+    protect_content: true
+  });
+
+if (media.fileType === 'document')
+  await ctx.replyWithDocument(media.fileId, {
+    caption,
+    parse_mode: 'Markdown',
+    protect_content: true
+  });
+
+if (media.fileType === 'voice')
+  await ctx.replyWithVoice(media.fileId, {
+    caption,
+    parse_mode: 'Markdown',
+    protect_content: true
+  });
+
+if (media.fileType === 'audio')
+  await ctx.replyWithAudio(media.fileId, {
+    caption,
+    parse_mode: 'Markdown',
+    protect_content: true
+  });
 
     ctx.session.rating.stage = 'emoji';
     ctx.session.rating.token = text;
@@ -200,42 +220,49 @@ Pilih reaksi`;
       { parse_mode: 'Markdown' }
     );
 
-    // Tanya komentar opsional
+    // Tampilkan 3 tombol untuk komentar
     ctx.session.rating.stage = 'comment';
     ctx.session.rating.emoji = text;
     return ctx.reply(
-      '📝 Kirim komentar atau tekan "Tidak kirim"',
-      Markup.keyboard([['Tidak kirim'], ['🔙 Kembali']]).resize()
+      '📝 Kirim komentar atau pilih tidak kirim / kembali',
+      Markup.keyboard([
+        ['Kirim komentar', 'Tidak kirim'],
+        ['🔙 Kembali']
+      ]).resize()
     );
   }
 
-  // ===== KOMENTAR OPSIONAL =====
+  // ===== KOMENTAR =====
   if (ctx.session.rating?.stage === 'comment') {
     const media = mediaStore.get(ctx.session.rating.token);
     if (!media) return;
 
-    if (text !== 'Tidak kirim') {
+    if (text === 'Kirim komentar') {
+      ctx.session.rating.stage = 'write_comment';
+      return ctx.reply('📝 Silahkan tulis komentar kamu:');
+    }
+
+    if (ctx.session.rating.stage === 'write_comment') {
       await sendSafeMessage(
         media.from,
         `💬 Komentar untuk Pap kamu: ${text} dari ${getUserDisplay(ctx.from)}`
       );
+      ctx.session = {};
+      return showMainMenu(ctx);
     }
 
-    ctx.session = {};
-    return showMainMenu(ctx);
+    if (text === 'Tidak kirim') {
+      ctx.session = {};
+      return showMainMenu(ctx);
+    }
   }
 
   // ===== MENFES =====
   if (ctx.session.menfes) {
-    // Kirim ke channel publik dengan tombol rate
     await sendSafeMessage(PUBLIC_CHANNEL_ID,
-      `📨 Menfes dari ${ctx.session.menfes.mode}:\n\n${text}`,
-      Markup.inlineKeyboard([
-        Markup.button.url('Kirim token ke bot', 'https://t.me/rate_seme_uke_bot')
-      ])
+      `📨 Menfes dari ${ctx.session.menfes.mode}:\n\n${text}\nKirim token ke emoji ke @rate_seme_uke_bot`
     );
 
-    // Kirim username ke admin
     await sendSafeMessage(ADMIN_ID,
       `📨 Menfes dari ${getUserDisplay(ctx.from)}:\n${text}`
     );
