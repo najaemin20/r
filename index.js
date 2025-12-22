@@ -1,5 +1,4 @@
 const { Telegraf, Markup, session } = require('telegraf');
-const crypto = require('crypto');
 
 // === Konfigurasi ===
 const BOT_TOKEN = process.env.BOT_TOKEN || '7524016177:AAEDhnG7UZ2n8BL6dXQA66_gi1IzReTazl4';
@@ -152,11 +151,18 @@ bot.on(['photo','video','document','voice','audio'], async (ctx) => {
     caption: ctx.session.kirimPap.caption || ''
   });
 
-  // Kirim ke channel publik
-  await sendSafeMessage(
+  // Kirim ke channel publik dengan tombol salin token
+  await bot.telegram.sendMessage(
     PUBLIC_CHANNEL_ID,
     `📸 PAP Baru\n🔐 Token: \`${token}\`\nKirim token ke @rate_seme_uke_bot`,
-    { parse_mode: 'MarkdownV2' }
+    {
+      parse_mode: 'MarkdownV2',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📋 Salin Token', switch_inline_query_current_chat: token }]
+        ]
+      }
+    }
   );
 
   // Info admin
@@ -197,6 +203,7 @@ bot.on('text', async (ctx, next) => {
     return showMainMenu(ctx);
   }
 
+  // ===== RATE PAP =====
   if (ctx.session.rating?.stage === 'token') {
     const media = mediaStore.get(text);
     if (!media) return ctx.reply('❌ Token tidak valid');
@@ -217,7 +224,68 @@ bot.on('text', async (ctx, next) => {
     return ctx.reply('Pilih emoji:', emojiKeyboard);
   }
 
-  // … (lanjut handler emoji, komentar, menfes sama seperti sebelumnya)
+  // ===== EMOJI =====
+  if (ctx.session.rating?.stage === 'emoji') {
+    const media = mediaStore.get(ctx.session.rating.token);
+    if (!media) return;
+
+    await sendSafeMessage(
+      media.from,
+      `📸 Pap kamu mendapat reaksi ${text} dari ${getUserDisplay(ctx.from)}`,
+      { parse_mode: 'Markdown' }
+    );
+
+    ctx.session.rating.stage = 'comment';
+    ctx.session.rating.emoji = text;
+    return ctx.reply(
+      '📝 Kirim komentar atau pilih tidak kirim / kembali',
+      Markup.keyboard([
+        ['Kirim komentar', 'Tidak kirim'],
+        ['🔙 Kembali']
+      ]).resize()
+    );
+  }
+
+  // ===== KOMENTAR =====
+  if (ctx.session.rating?.stage === 'comment') {
+    const media = mediaStore.get(ctx.session.rating.token);
+    if (!media) return;
+
+    if (text === 'Kirim komentar') {
+      ctx.session.rating.stage = 'write_comment';
+      return ctx.reply('📝 Silahkan tulis komentar kamu:');
+    }
+
+    if (ctx.session.rating.stage === 'write_comment') {
+      await sendSafeMessage(
+        media.from,
+        `💬 Komentar untuk Pap kamu: ${text} dari ${getUserDisplay(ctx.from)}`
+      );
+      ctx.session = {};
+      return showMainMenu(ctx);
+    }
+
+    if (text === 'Tidak kirim') {
+      ctx.session = {};
+      return showMainMenu(ctx);
+    }
+  }
+
+  // ===== MENFES =====
+  if (ctx.session.menfes) {
+    await sendSafeMessage(PUBLIC_CHANNEL_ID,
+      `📨 Menfes dari ${ctx.session.menfes.mode}:\n\n${text}`
+    );
+
+    await sendSafeMessage(ADMIN_ID,
+      `📨 Menfes dari ${getUserDisplay(ctx.from)}:\n${text}`
+    );
+
+    ctx.session = {};
+    await ctx.reply('✅ Menfes terkirim');
+    return showMainMenu(ctx);
+  }
+
   return next();
 });
 
