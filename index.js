@@ -116,10 +116,11 @@ bot.on(['photo','video','document','voice','audio'], async (ctx) => {
   await sendSafeMessage(
   PUBLIC_CHANNEL_ID,
   `📸 PAP Baru
-🔐 Token: \`${token}\`
+🔐 Token: \`${token.replace(/[`\\]/g, '\\$&')}\`
 Kirim token ke @rate_seme_uke_bot`,
-  { parse_mode: 'Markdown' }
+  { parse_mode: 'MarkdownV2' }
 );
+
   
   // Kirim info pengirim ke admin
   await sendSafeMessage(ADMIN_ID,
