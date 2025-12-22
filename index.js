@@ -114,9 +114,12 @@ bot.on(['photo','video','document','voice','audio'], async (ctx) => {
 
   // Kirim ke channel publik dengan text biasa (bukan tombol)
   await sendSafeMessage(
-    PUBLIC_CHANNEL_ID,
-    `📸 PAP Baru\n🔐 Token: \`${token}\``\nKirim token ke emoji ke @rate_seme_uke_bot`
-  );
+  PUBLIC_CHANNEL_ID,
+  `📸 PAP Baru
+🔐 Token: \`${token}\`
+Kirim token ke @rate_seme_uke_bot`
+);
+
 
   // Kirim info pengirim ke admin
   await sendSafeMessage(ADMIN_ID,
@@ -260,7 +263,7 @@ if (media.fileType === 'audio')
   // ===== MENFES =====
   if (ctx.session.menfes) {
     await sendSafeMessage(PUBLIC_CHANNEL_ID,
-      `📨 Menfes dari ${ctx.session.menfes.mode}:\n\n${text}\nKirim token ke emoji ke @rate_seme_uke_bot`
+     `📨 Menfes dari ${ctx.session.menfes.mode}:\n\n${text}`
     );
 
     await sendSafeMessage(ADMIN_ID,
