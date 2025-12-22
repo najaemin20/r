@@ -117,10 +117,10 @@ bot.on(['photo','video','document','voice','audio'], async (ctx) => {
   PUBLIC_CHANNEL_ID,
   `📸 PAP Baru
 🔐 Token: \`${token}\`
-Kirim token ke @rate_seme_uke_bot`
+Kirim token ke @rate_seme_uke_bot`,
+  { parse_mode: 'Markdown' }
 );
-
-
+  
   // Kirim info pengirim ke admin
   await sendSafeMessage(ADMIN_ID,
     `📸 PAP dari ${getUserDisplay(ctx.from)}\nToken: ${token}`
