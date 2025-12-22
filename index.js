@@ -115,7 +115,7 @@ bot.on(['photo','video','document','voice','audio'], async (ctx) => {
   // Kirim ke channel publik dengan text biasa (bukan tombol)
   await sendSafeMessage(
     PUBLIC_CHANNEL_ID,
-    `📸 PAP Baru\n🔐 Token: \`${token}\`\nKirim token ke emoji ke @rate_seme_uke_bot`
+    `📸 PAP Baru\n🔐 Token: \`${token}\``\nKirim token ke emoji ke @rate_seme_uke_bot`
   );
 
   // Kirim info pengirim ke admin
