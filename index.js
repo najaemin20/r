@@ -128,11 +128,16 @@ bot.on(['photo','video','document','voice','audio'], async (ctx) => {
 
   await ctx.reply(`✅ Media diterima\n🔐 Token: \`${token}\``, { parse_mode: 'Markdown' });
 
-  await sendSafeMessage(
-    PUBLIC_CHANNEL_ID,
-    `📸 Pap baru\n🔐 Token: <code>${token}</code>`,
-    { parse_mode: 'HTML' }
-  );
+await sendSafeMessage(
+  PUBLIC_CHANNEL_ID,
+  `📸 <b>Pap Baru</b>
+🔐 <b>Token:</b> <code>${token}</code>
+
+➡️ <b>Kirim token di atas ke bot:</b>
+👉 <b>@rate_seme_uke_bot</b>`,
+  { parse_mode: 'HTML' }
+);
+
 
   await sendSafeMessage(
     ADMIN_ID,
