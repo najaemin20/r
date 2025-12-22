@@ -101,7 +101,10 @@ bot.hears(['🙈 Anonim', '🪪 Identitas'], async (ctx) => {
     ctx.session.menfes = {
       mode: ctx.message.text === '🙈 Anonim' ? 'Anonim' : getUserDisplay(ctx.from)
     };
-    await ctx.reply('Kirim pesan menfes (hanya teks/link)');
+    await ctx.reply(
+      '✏️ Silahkan tulis pesan menfes kamu (hanya teks/link):',
+      Markup.keyboard([['🔙 Kembali']]).resize()
+    );
   }
 });
 
@@ -151,18 +154,11 @@ bot.on(['photo','video','document','voice','audio'], async (ctx) => {
     caption: ctx.session.kirimPap.caption || ''
   });
 
-  // Kirim ke channel publik dengan tombol salin token
-  await bot.telegram.sendMessage(
+  // Kirim ke channel publik
+  await sendSafeMessage(
     PUBLIC_CHANNEL_ID,
     `📸 PAP Baru\n🔐 Token: \`${token}\`\nKirim token ke @rate_seme_uke_bot`,
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '📋 Salin Token', switch_inline_query_current_chat: token }]
-        ]
-      }
-    }
+    { parse_mode: 'MarkdownV2' }
   );
 
   // Info admin
@@ -224,55 +220,9 @@ bot.on('text', async (ctx, next) => {
     return ctx.reply('Pilih emoji:', emojiKeyboard);
   }
 
-  // ===== EMOJI =====
-  if (ctx.session.rating?.stage === 'emoji') {
-    const media = mediaStore.get(ctx.session.rating.token);
-    if (!media) return;
-
-    await sendSafeMessage(
-      media.from,
-      `📸 Pap kamu mendapat reaksi ${text} dari ${getUserDisplay(ctx.from)}`,
-      { parse_mode: 'Markdown' }
-    );
-
-    ctx.session.rating.stage = 'comment';
-    ctx.session.rating.emoji = text;
-    return ctx.reply(
-      '📝 Kirim komentar atau pilih tidak kirim / kembali',
-      Markup.keyboard([
-        ['Kirim komentar', 'Tidak kirim'],
-        ['🔙 Kembali']
-      ]).resize()
-    );
-  }
-
-  // ===== KOMENTAR =====
-  if (ctx.session.rating?.stage === 'comment') {
-    const media = mediaStore.get(ctx.session.rating.token);
-    if (!media) return;
-
-    if (text === 'Kirim komentar') {
-      ctx.session.rating.stage = 'write_comment';
-      return ctx.reply('📝 Silahkan tulis komentar kamu:');
-    }
-
-    if (ctx.session.rating.stage === 'write_comment') {
-      await sendSafeMessage(
-        media.from,
-        `💬 Komentar untuk Pap kamu: ${text} dari ${getUserDisplay(ctx.from)}`
-      );
-      ctx.session = {};
-      return showMainMenu(ctx);
-    }
-
-    if (text === 'Tidak kirim') {
-      ctx.session = {};
-      return showMainMenu(ctx);
-    }
-  }
-
-  // ===== MENFES =====
-  if (ctx.session.menfes) {
+  // ===== Menfes =====
+  if (ctx.session.state === 'menfes' && ctx.session.menfes) {
+    // Kirim pesan menfes
     await sendSafeMessage(PUBLIC_CHANNEL_ID,
       `📨 Menfes dari ${ctx.session.menfes.mode}:\n\n${text}`
     );
@@ -287,17 +237,6 @@ bot.on('text', async (ctx, next) => {
   }
 
   return next();
-});
-
-// ===== MENFES =====
-bot.hears('📨 Menfes', async (ctx) => {
-  ctx.session = {};
-  ctx.session.state = 'menfes';
-
-  await ctx.reply(
-    'Kirim sebagai?',
-    Markup.keyboard([['🙈 Anonim', '🪪 Identitas'], ['🔙 Kembali']]).resize()
-  );
 });
 
 // ===== VIP VIDEO =====
