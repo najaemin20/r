@@ -23,8 +23,16 @@ function getUserDisplay(user) {
   return `[${user.first_name}](tg://user?id=${user.id})`;
 }
 
+// Escape MarkdownV2 characters
+function escapeMarkdownV2(text) {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
+}
+
 async function sendSafeMessage(id, text, extra = {}) {
   try {
+    if (extra.parse_mode === 'MarkdownV2') {
+      text = escapeMarkdownV2(text);
+    }
     await bot.telegram.sendMessage(id, text, extra);
   } catch (e) { console.log(e); }
 }
@@ -112,16 +120,15 @@ bot.on(['photo','video','document','voice','audio'], async (ctx) => {
     mode: ctx.session.kirimPap.mode
   });
 
-  // Kirim ke channel publik dengan text biasa (bukan tombol)
+  // Kirim ke channel publik dengan escape MarkdownV2
   await sendSafeMessage(
-  PUBLIC_CHANNEL_ID,
-  `📸 PAP Baru
-🔐 Token: \`${token.replace(/[`\\]/g, '\\$&')}\`
+    PUBLIC_CHANNEL_ID,
+    `📸 PAP Baru
+🔐 Token: \`${token}\`
 Kirim token ke @rate_seme_uke_bot`,
-  { parse_mode: 'MarkdownV2' }
-);
+    { parse_mode: 'MarkdownV2' }
+  );
 
-  
   // Kirim info pengirim ke admin
   await sendSafeMessage(ADMIN_ID,
     `📸 PAP dari ${getUserDisplay(ctx.from)}\nToken: ${token}`
@@ -154,14 +161,12 @@ const emojiKeyboard = Markup.keyboard([
 bot.on('text', async (ctx, next) => {
   const text = ctx.message.text;
 
-  // ===== KEMBALI =====
   if (text === '🔙 Kembali') {
     ctx.session = {};
     await ctx.reply('🔄 Dibatalkan');
     return showMainMenu(ctx);
   }
 
-  // ===== RATING =====
   if (ctx.session.rating?.stage === 'token') {
     const media = mediaStore.get(text);
     if (!media) return ctx.reply('❌ Token tidak valid');
@@ -171,60 +176,30 @@ bot.on('text', async (ctx, next) => {
 🔐 Token: \`${text}\`
 
 Pilih reaksi`;
-// Kirim media ke user untuk rating
-if (media.fileType === 'photo')
-  await ctx.replyWithPhoto(media.fileId, {
-    caption,
-    parse_mode: 'Markdown',
-    protect_content: true
-  });
 
-if (media.fileType === 'video')
-  await ctx.replyWithVideo(media.fileId, {
-    caption,
-    parse_mode: 'Markdown',
-    protect_content: true
-  });
-
-if (media.fileType === 'document')
-  await ctx.replyWithDocument(media.fileId, {
-    caption,
-    parse_mode: 'Markdown',
-    protect_content: true
-  });
-
-if (media.fileType === 'voice')
-  await ctx.replyWithVoice(media.fileId, {
-    caption,
-    parse_mode: 'Markdown',
-    protect_content: true
-  });
-
-if (media.fileType === 'audio')
-  await ctx.replyWithAudio(media.fileId, {
-    caption,
-    parse_mode: 'Markdown',
-    protect_content: true
-  });
+    // Kirim media ke user untuk rating
+    const options = { caption, parse_mode: 'Markdown', protect_content: true };
+    if (media.fileType === 'photo') await ctx.replyWithPhoto(media.fileId, options);
+    if (media.fileType === 'video') await ctx.replyWithVideo(media.fileId, options);
+    if (media.fileType === 'document') await ctx.replyWithDocument(media.fileId, options);
+    if (media.fileType === 'voice') await ctx.replyWithVoice(media.fileId, options);
+    if (media.fileType === 'audio') await ctx.replyWithAudio(media.fileId, options);
 
     ctx.session.rating.stage = 'emoji';
     ctx.session.rating.token = text;
     return ctx.reply('Pilih emoji:', emojiKeyboard);
   }
 
-  // ===== EMOJI =====
   if (ctx.session.rating?.stage === 'emoji') {
     const media = mediaStore.get(ctx.session.rating.token);
     if (!media) return;
 
-    // Kirim reaksi ke pengirim media
     await sendSafeMessage(
       media.from,
       `📸 Pap kamu mendapat reaksi ${text} dari ${getUserDisplay(ctx.from)}`,
       { parse_mode: 'Markdown' }
     );
 
-    // Tampilkan 3 tombol untuk komentar
     ctx.session.rating.stage = 'comment';
     ctx.session.rating.emoji = text;
     return ctx.reply(
@@ -236,7 +211,6 @@ if (media.fileType === 'audio')
     );
   }
 
-  // ===== KOMENTAR =====
   if (ctx.session.rating?.stage === 'comment') {
     const media = mediaStore.get(ctx.session.rating.token);
     if (!media) return;
@@ -261,10 +235,9 @@ if (media.fileType === 'audio')
     }
   }
 
-  // ===== MENFES =====
   if (ctx.session.menfes) {
     await sendSafeMessage(PUBLIC_CHANNEL_ID,
-     `📨 Menfes dari ${ctx.session.menfes.mode}:\n\n${text}`
+      `📨 Menfes dari ${ctx.session.menfes.mode}:\n\n${text}`
     );
 
     await sendSafeMessage(ADMIN_ID,
