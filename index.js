@@ -174,7 +174,9 @@ bot.on('message', async (msg) => {
 
   if (state.step === 'rate_emoji') {
     // Kirim rating ke pemilik PAP
-    await bot.sendMessage(state.targetUser, `⭐ Rating: ${text}`)
+    const raterUsername = getUsername(msg.from)
+    await bot.sendMessage(state.targetUser, `⭐ Rating dari ${raterUsername}: ${text}`)
+
 
     // Minta komentar opsional
     userState.set(chatId, {
@@ -207,7 +209,8 @@ bot.on('message', async (msg) => {
   }
 
   if (state.step === 'rate_comment_text') {
-    await bot.sendMessage(state.targetUser, `💬 Komentar:\n${text}`)
+   const commenterUsername = getUsername(msg.from)
+await bot.sendMessage(state.targetUser, `💬 Komentar dari ${commenterUsername}:\n${text}`)
     return mainMenu(chatId)
   }
 
