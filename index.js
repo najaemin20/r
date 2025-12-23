@@ -1,252 +1,297 @@
-const { Telegraf, Markup, session } = require('telegraf');
+const TelegramBot = require('node-telegram-bot-api')
 
-// === Konfigurasi ===
-const BOT_TOKEN = process.env.BOT_TOKEN || '7524016177:AAEDhnG7UZ2n8BL6dXQA66_gi1IzReTazl4';
-const PUBLIC_CHANNEL_ID = '-1002857800900';
-const ADMIN_ID = 6468926488;
+// ===== CONFIG =====
+const BOT_TOKEN = '7524016177:AAEDhnG7UZ2n8BL6dXQA66_gi1IzReTazl4' // Token bot
+const ADMIN_ID = 7598563861 // ID admin untuk notifikasi
+const CHANNEL_ID = -1002857800900 // ID channel tempat PAP/Menfes dikirim
 
-// === Setup Bot ===
-const bot = new Telegraf(BOT_TOKEN);
-bot.use(session({ defaultSession: () => ({}) }));
+// ===== INIT BOT =====
+const bot = new TelegramBot(BOT_TOKEN, { polling: true })
 
-const mediaStore = new Map();
+// ===== DATA STORAGE SEMENTARA =====
+const userState = new Map() // Menyimpan state per user
+const tokenStore = new Map() // Menyimpan token PAP: token => { ownerId, mediaMsgId, caption }
 
-// ===== Utility =====
-function generateToken() {
-  // Token 4 digit angka
-  return Math.floor(1000 + Math.random() * 9000).toString();
+/* ===== UTILITIES ===== */
+
+// Generate token 4 digit untuk PAP
+function genToken() {
+  return Math.floor(1000 + Math.random() * 9000).toString()
 }
 
-function getUserDisplay(user) {
-  if (!user) return 'Anonim';
-  if (user.username) return `@${user.username}`;
-  return `[${user.first_name}](tg://user?id=${user.id})`;
+// Ambil username Telegram, fallback jika tidak ada
+function getUsername(user) {
+  return user.username ? '@' + user.username : '(no_username)'
 }
 
-// Escape MarkdownV2 characters
-function escapeMarkdownV2(text) {
-  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
+// Reset state user
+function reset(chatId) {
+  userState.delete(chatId)
 }
 
-async function sendSafeMessage(id, text, extra = {}) {
-  try {
-    if (extra.parse_mode === 'MarkdownV2') {
-      text = escapeMarkdownV2(text);
+// Keyboard "Kembali"
+function backKeyboard() {
+  return {
+    reply_markup: {
+      keyboard: [['⬅️ Kembali']],
+      resize_keyboard: true
     }
-    await bot.telegram.sendMessage(id, text, extra);
-  } catch (e) { console.log(e); }
+  }
 }
 
-// ===== Menu Utama =====
-async function showMainMenu(ctx) {
-  await ctx.reply(
-    '🏠 Menu Utama',
-    Markup.keyboard([
-      ['📊 Rate Pap', '📸 Kirim Pap'],
-      ['📨 Menfes', '🎬 VIP Video'],
-      ['ℹ️ Help']
-    ]).resize()
-  );
+// Menu utama
+function mainMenu(chatId) {
+  reset(chatId)
+  bot.sendMessage(chatId, '📋 Menu Utama', {
+    reply_markup: {
+      keyboard: [
+        ['⭐ Rate PAP', '📤 Kirim PAP'],
+        ['💌 Menfes', '❓ Help'],
+        ['🔞 VIP Video']
+      ],
+      resize_keyboard: true
+    }
+  })
 }
 
-// ===== START =====
-bot.start(async (ctx) => {
-  ctx.session = {};
-  await showMainMenu(ctx);
-});
+/* ===== COMMAND /start ===== */
+bot.onText(/\/start/, (msg) => mainMenu(msg.chat.id))
 
-// ===== HELP =====
-bot.hears('ℹ️ Help', async (ctx) => {
-  await ctx.reply(
-`📘 *Panduan Bot*
+/* ===== MESSAGE HANDLER ===== */
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id
+  const text = msg.text
+  const state = userState.get(chatId)
 
-📸 Kirim Pap → Kirim media & dapat token  
-📊 Rate Pap → Masukkan token & beri reaksi + komentar opsional  
-📨 Menfes → Kirim pesan anonim / identitas  
-
-🎬 VIP Video → Beli channel VIP video murah
-
-🔙 Kembali = batal & ulang`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-// ===== KIRIM PAP =====
-bot.hears('📸 Kirim Pap', async (ctx) => {
-  ctx.session = {};
-  ctx.session.state = 'kirimPap';
-
-  await ctx.reply(
-    'Kirim sebagai?',
-    Markup.keyboard([['🙈 Anonim', '🪪 Identitas'], ['🔙 Kembali']]).resize()
-  );
-});
-
-// Pilih mode anonim/identitas
-bot.hears(['🙈 Anonim', '🪪 Identitas'], async (ctx) => {
-  if (!ctx.session.state) return;
-
-  if (ctx.session.state === 'kirimPap') {
-    ctx.session.kirimPap = {
-      mode: ctx.message.text === '🙈 Anonim' ? 'Anonim' : getUserDisplay(ctx.from)
-    };
-    // Minta user pilih kasih caption atau tidak
-    await ctx.reply(
-      'Apakah ingin menambahkan caption pada media?',
-      Markup.keyboard([['Ya', 'Tidak'], ['🔙 Kembali']]).resize()
-    );
+  // =====================
+  // MENU UTAMA
+  // =====================
+  if (text === '⭐ Rate PAP') {
+    userState.set(chatId, { step: 'rate_token' })
+    return bot.sendMessage(chatId, '🔑 Kirim token PAP', backKeyboard())
   }
 
-  if (ctx.session.state === 'menfes') {
-    ctx.session.menfes = {
-      mode: ctx.message.text === '🙈 Anonim' ? 'Anonim' : getUserDisplay(ctx.from)
-    };
-    await ctx.reply(
-      '✏️ Silahkan tulis pesan menfes kamu (hanya teks/link):',
-      Markup.keyboard([['🔙 Kembali']]).resize()
-    );
-  }
-});
-
-// Pilihan caption
-bot.hears(['Ya', 'Tidak'], async (ctx) => {
-  if (!ctx.session.kirimPap) return;
-
-  ctx.session.kirimPap.addCaption = ctx.message.text === 'Ya';
-  if (ctx.session.kirimPap.addCaption) {
-    ctx.session.kirimPap.stage = 'caption';
-    await ctx.reply('Silahkan tulis caption:');
-  } else {
-    ctx.session.kirimPap.stage = 'media';
-    await ctx.reply('📎 Kirim media sekarang');
-  }
-});
-
-// Terima caption sebelum media
-bot.on('text', async (ctx, next) => {
-  if (ctx.session.kirimPap?.stage === 'caption') {
-    ctx.session.kirimPap.caption = ctx.message.text;
-    ctx.session.kirimPap.stage = 'media';
-    await ctx.reply('📎 Sekarang kirim media');
-    return;
-  }
-  return next();
-});
-
-// ===== TERIMA MEDIA PAP =====
-bot.on(['photo','video','document','voice','audio'], async (ctx) => {
-  if (!ctx.session.kirimPap || ctx.session.kirimPap.stage !== 'media') return;
-
-  let file, type;
-  if (ctx.message.photo) { file = ctx.message.photo.pop(); type = 'photo'; }
-  if (ctx.message.video) { file = ctx.message.video; type = 'video'; }
-  if (ctx.message.document) { file = ctx.message.document; type = 'document'; }
-  if (ctx.message.voice) { file = ctx.message.voice; type = 'voice'; }
-  if (ctx.message.audio) { file = ctx.message.audio; type = 'audio'; }
-
-  const token = generateToken();
-
-  mediaStore.set(token, {
-    fileId: file.file_id,
-    fileType: type,
-    from: ctx.from.id,
-    mode: ctx.session.kirimPap.mode,
-    caption: ctx.session.kirimPap.caption || ''
-  });
-
-  // Kirim ke channel publik
-  await sendSafeMessage(
-    PUBLIC_CHANNEL_ID,
-    `📸 PAP Baru\n🔐 Token: \`${token}\`\nKirim token ke @rate_seme_uke_bot`,
-    { parse_mode: 'MarkdownV2' }
-  );
-
-  // Info admin
-  await sendSafeMessage(ADMIN_ID,
-    `📸 PAP dari ${getUserDisplay(ctx.from)}\nToken: ${token}`
-  );
-
-  ctx.session = {};
-  await ctx.reply(`✅ Media diterima\n🔐 Token: \`${token}\``, { parse_mode: 'Markdown' });
-  await showMainMenu(ctx);
-});
-
-// ===== RATE PAP =====
-bot.hears('📊 Rate Pap', async (ctx) => {
-  ctx.session = {};
-  ctx.session.rating = { stage: 'token' };
-
-  await ctx.reply(
-    '🔢 Silahkan kirim token PAP',
-    Markup.keyboard([['🔙 Kembali']]).resize()
-  );
-});
-
-// Keyboard emoji 4x4
-const emojiKeyboard = Markup.keyboard([
-  ['❤️','😍','🔥','👍'],
-  ['👎','😂','😭','🤯'],
-  ['🔙 Kembali']
-]).resize();
-
-// ===== TEKS HANDLER =====
-bot.on('text', async (ctx, next) => {
-  const text = ctx.message.text;
-
-  if (text === '🔙 Kembali') {
-    ctx.session = {};
-    await ctx.reply('🔄 Dibatalkan');
-    return showMainMenu(ctx);
+  if (text === '📤 Kirim PAP') {
+    userState.set(chatId, { step: 'pap_mode' })
+    return bot.sendMessage(chatId, 'Pilih mode PAP', {
+      reply_markup: {
+        keyboard: [
+          ['🕶 Anonim', '🙍 Non Anonim'],
+          ['⬅️ Kembali']
+        ],
+        resize_keyboard: true
+      }
+    })
   }
 
-  // ===== RATE PAP =====
-  if (ctx.session.rating?.stage === 'token') {
-    const media = mediaStore.get(text);
-    if (!media) return ctx.reply('❌ Token tidak valid');
-
-    let caption = `📸 Pap dari ${media.mode}\n🔐 Token: \`${text}\``;
-    if (media.caption) caption += `\n\n💬 Caption: ${media.caption}`;
-    caption += `\n\nPilih reaksi`;
-
-    const options = { caption, parse_mode: 'Markdown', protect_content: true };
-    if (media.fileType === 'photo') await ctx.replyWithPhoto(media.fileId, options);
-    if (media.fileType === 'video') await ctx.replyWithVideo(media.fileId, options);
-    if (media.fileType === 'document') await ctx.replyWithDocument(media.fileId, options);
-    if (media.fileType === 'voice') await ctx.replyWithVoice(media.fileId, options);
-    if (media.fileType === 'audio') await ctx.replyWithAudio(media.fileId, options);
-
-    ctx.session.rating.stage = 'emoji';
-    ctx.session.rating.token = text;
-    return ctx.reply('Pilih emoji:', emojiKeyboard);
+  if (text === '💌 Menfes') {
+    userState.set(chatId, { step: 'menfes_mode' })
+    return bot.sendMessage(chatId, 'Pilih mode Menfes', {
+      reply_markup: {
+        keyboard: [
+          ['🕶 Anonim', '🙍 Non Anonim'],
+          ['⬅️ Kembali']
+        ],
+        resize_keyboard: true
+      }
+    })
   }
 
-  // ===== Menfes =====
-  if (ctx.session.state === 'menfes' && ctx.session.menfes) {
-    // Kirim pesan menfes
-    await sendSafeMessage(PUBLIC_CHANNEL_ID,
-      `📨 Menfes dari ${ctx.session.menfes.mode}:\n\n${text}`
-    );
+  if (text === '❓ Help') {
+    return bot.sendMessage(chatId,
+`ℹ️ *Help Bot PAP & Menfes*
 
-    await sendSafeMessage(ADMIN_ID,
-      `📨 Menfes dari ${getUserDisplay(ctx.from)}:\n${text}`
-    );
+*⭐ Rate PAP*
+- Kirim token PAP 4 digit yang diterima.
+- Pilih emoji untuk rating.
+- Bisa menambahkan komentar opsional.
 
-    ctx.session = {};
-    await ctx.reply('✅ Menfes terkirim');
-    return showMainMenu(ctx);
+*📤 Kirim PAP*
+- Pilih mode: Anonim / Non Anonim.
+- Kirim media (foto/video/document) + teks opsional.
+- Bot akan memberikan token 4 digit untuk dibagikan.
+
+*💌 Menfes*
+- Pilih mode: Anonim / Non Anonim.
+- Tulis pesan menfes.
+- Pesan akan dikirim ke channel.
+
+*🔞 VIP Video*
+- Link menuju konten VIP (eksternal).
+
+*⬅️ Kembali*
+- Kembali ke menu utama.
+`,
+{
+  parse_mode: 'Markdown',
+  reply_markup: {
+    keyboard: [['⬅️ Kembali']],
+    resize_keyboard: true
+  }
+})
   }
 
-  return next();
-});
+  if (text === '🔞 VIP Video') {
+    return bot.sendMessage(chatId, 'BELI VIDEO MURAH + UPDATE TIAP HARI DISINI @vvip_3_bot')
+  }
 
-// ===== VIP VIDEO =====
-bot.hears('🎬 VIP Video', async (ctx) => {
-  await ctx.reply('Beli channel VIP video murah di @vvip_3_bot');
-});
+  if (text === '⬅️ Kembali') {
+    return mainMenu(chatId)
+  }
 
-// ===== LAUNCH =====
-bot.launch();
-console.log('✅ Bot berjalan');
+  // Jika tidak ada state, hentikan
+  if (!state) return
 
-process.once('SIGINT', () => bot.stop());
-process.once('SIGTERM', () => bot.stop());
+  // =====================
+  // RATE PAP
+  // =====================
+  if (state.step === 'rate_token') {
+    const data = tokenStore.get(text)
+    if (!data) return bot.sendMessage(chatId, '❌ Token tidak valid')
+
+    userState.set(chatId, {
+      step: 'rate_emoji',
+      targetUser: data.ownerId
+    })
+
+    // Salin media ke user yang ingin memberi rating
+    await bot.copyMessage(chatId, data.ownerId, data.mediaMsgId, {
+      caption: data.caption,
+      protect_content: true
+    })
+
+    return bot.sendMessage(chatId, 'Pilih rating:', {
+      reply_markup: {
+        keyboard: [
+          ['😍', '🔥', '👍', '😐'],
+          ['👎', '🤢', '💀', '🤡'],
+          ['⬅️ Kembali']
+        ],
+        resize_keyboard: true
+      }
+    })
+  }
+
+  if (state.step === 'rate_emoji') {
+    // Kirim rating ke pemilik PAP
+    await bot.sendMessage(state.targetUser, `⭐ Rating: ${text}`)
+
+    // Minta komentar opsional
+    userState.set(chatId, {
+      step: 'rate_comment',
+      targetUser: state.targetUser
+    })
+
+    return bot.sendMessage(chatId, 'Kirim komentar?', {
+      reply_markup: {
+        keyboard: [
+          ['✍️ Kirim Komentar', '🚫 Tidak'],
+          ['⬅️ Kembali']
+        ],
+        resize_keyboard: true
+      }
+    })
+  }
+
+  if (state.step === 'rate_comment') {
+    if (text === '🚫 Tidak') {
+      return mainMenu(chatId)
+    }
+    if (text === '✍️ Kirim Komentar') {
+      userState.set(chatId, {
+        step: 'rate_comment_text',
+        targetUser: state.targetUser
+      })
+      return bot.sendMessage(chatId, '✍️ Tulis komentar')
+    }
+  }
+
+  if (state.step === 'rate_comment_text') {
+    await bot.sendMessage(state.targetUser, `💬 Komentar:\n${text}`)
+    return mainMenu(chatId)
+  }
+
+  // =====================
+  // KIRIM PAP
+  // =====================
+  if (state.step === 'pap_mode' && (text === '🕶 Anonim' || text === '🙍 Non Anonim')) {
+    userState.set(chatId, {
+      step: 'pap_media',
+      anon: text === '🕶 Anonim'
+    })
+    return bot.sendMessage(chatId, '📎 Kirim PAP + teks (opsional)', backKeyboard())
+  }
+
+  if (state.step === 'pap_media' && (msg.photo || msg.video || msg.document)) {
+    const token = genToken()
+    const username = getUsername(msg.from)
+    const caption = msg.caption || '—'
+
+    tokenStore.set(token, {
+      ownerId: chatId,
+      mediaMsgId: msg.message_id,
+      caption
+    })
+
+    // Kirim ke channel
+    await bot.sendMessage(CHANNEL_ID,
+`📥 PAP BARU
+🔑 Token: <code>${token}</code>
+👤 ${state.anon ? 'Anonim' : username}
+➡️ Kirim token ke bot : @rate_seme_uke_bot`,
+{
+  parse_mode: 'HTML'
+})
+
+    // Notifikasi admin
+    await bot.sendMessage(ADMIN_ID,
+`📥 PAP
+User: ${username}
+Token: ${token}`
+    )
+
+    await bot.sendMessage(chatId, `✅ PAP terkirim\nToken: ${token}`)
+    return mainMenu(chatId)
+  }
+
+  // =====================
+  // MENFES
+  // =====================
+  if (state.step === 'menfes_mode' && (text === '🕶 Anonim' || text === '🙍 Non Anonim')) {
+    userState.set(chatId, {
+      step: 'menfes_text',
+      anon: text === '🕶 Anonim'
+    })
+    return bot.sendMessage(chatId, '✍️ Tulis menfes', backKeyboard())
+  }
+
+  if (state.step === 'menfes_text') {
+    const username = getUsername(msg.from)
+
+   // Kirim Menfes ke channel dalam bentuk "blok"
+await bot.sendMessage(
+  CHANNEL_ID,
+  `💌 MENFES
+Mode: ${state.anon ? 'Anonim' : 'Non Anonim'}
+${state.anon ? '' : 'User: ' + username}
+Pesan:
+${text}`
+)
+
+
+    // Notifikasi admin
+    await bot.sendMessage(ADMIN_ID,
+`📩 MENFES
+User: ${username}
+Isi:
+${text}`
+    )
+
+    // Notifikasi ke user
+    await bot.sendMessage(chatId, '✅ Menfes berhasil dikirim!')
+
+    return mainMenu(chatId)
+  }
+})
+
+console.log('🤖 Bot aktif')
