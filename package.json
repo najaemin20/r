@@ -1,5 +1,5 @@
 {
-  "name": "web",
+  "name": "new-folder",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -10,7 +10,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "canvas": "^3.2.0",
-    "telegraf": "^4.16.3"
+    "node-telegram-bot-api": "^0.67.0"
   }
 }
