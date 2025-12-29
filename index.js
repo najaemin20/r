@@ -1,7 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api')
 
 // ===== CONFIG =====
-const BOT_TOKEN = '7524016177:AAEDhnG7UZ2n8BL6dXQA66_gi1IzReTazl4' // Token bot
+const BOT_TOKEN = '7524016177:AAEuG1Jne1nZv4Z9dIq5R27OWAfxNp9WLSU' // Token bot
 const ADMIN_ID = 7598563861 // ID admin untuk notifikasi
 const CHANNEL_ID = -1002857800900 // ID channel tempat PAP/Menfes dikirim
 
@@ -155,10 +155,16 @@ bot.on('message', async (msg) => {
     })
 
     // Salin media ke user yang ingin memberi rating
-    await bot.copyMessage(chatId, data.ownerId, data.mediaMsgId, {
-      caption: data.caption,
-      protect_content: true
-    })
+   await bot.copyMessage(
+  chatId,           // penerima (yang ngerate)
+  data.ownerId,     // pemilik PAP (asal media)
+  data.mediaMsgId,
+  {
+    caption: data.caption,
+    protect_content: true
+  }
+)
+
 
     return bot.sendMessage(chatId, 'Pilih rating:', {
       reply_markup: {
@@ -297,4 +303,11 @@ ${text}`
   }
 })
 
+bot.on('polling_error', (error) => {
+  console.error('Polling error:', error.message)
+})
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason)
+})
 console.log('🤖 Bot aktif')
